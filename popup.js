@@ -1,3 +1,117 @@
+async function extractTextFromPage(currentUrl) {
+  function waitForSelector(selectors, timeout = 3000) {
+    const list = Array.isArray(selectors) ? selectors : [selectors];
+    return new Promise((resolve) => {
+      for (const sel of list) {
+        const el = document.querySelector(sel);
+        if (el) return resolve(el);
+      }
+      const observer = new MutationObserver(() => {
+        for (const sel of list) {
+          const el = document.querySelector(sel);
+          if (el) {
+            observer.disconnect();
+            resolve(el);
+            return;
+          }
+        }
+      });
+      observer.observe(document.body, { childList: true, subtree: true });
+      setTimeout(() => {
+        observer.disconnect();
+        resolve(null);
+      }, timeout);
+    });
+  }
+
+  function getVisibleText(el) {
+    if (!el) return '';
+    const hidden = el.querySelector('[class*="HiddenMeasure"]');
+    if (hidden) {
+      const clone = el.cloneNode(true);
+      clone.querySelectorAll('[class*="HiddenMeasure"]').forEach((h) => h.remove());
+      return clone.textContent?.trim() || '';
+    }
+    return el.textContent?.trim() || '';
+  }
+
+  function detectSystem(url) {
+    if (url.includes('pureservice.com')) return 'pureservice';
+    if (url.includes('hubspot.com') && url.includes('/help-desk/')) return 'hubspot-helpdesk';
+    if (url.includes('hubspot.com')) return 'hubspot-ticket';
+    return null;
+  }
+
+  const SYSTEMS = {
+    pureservice: {
+      name: 'Pureservice',
+      selectors: {
+        ticketId: '.request-number',
+        contact: '.c-user-popover button',
+        subject: '.ember-text-field.subject.ember-view'
+      },
+      getTicketId: () => {
+        const el = document.querySelector('.request-number');
+        return el?.textContent?.trim() || '';
+      },
+      getContact: (el) => el?.textContent?.trim() || '',
+      getSubject: (el) => (el?.value || el?.textContent || '').trim()
+    },
+    'hubspot-ticket': {
+      name: 'HubSpot',
+      selectors: {
+        contact: [
+          '[data-test-id="contact-chicklet-title-link"]',
+          '[data-test-id="contact-chicklet-title"] a',
+          '[data-test-id="email-sender"] strong'
+        ],
+        subject: '[data-test-id="highlight-property-display-subject"]'
+      },
+      getTicketId: () => {
+        const match = window.location.href.match(/\/record\/[^/]+\/(\d+)/);
+        return match?.[1] || '';
+      },
+      getContact: (el) => getVisibleText(el),
+      getSubject: (el) => getVisibleText(el)
+    },
+    'hubspot-helpdesk': {
+      name: 'HubSpot',
+      selectors: {
+        contact: '[data-test-id="ticket-header-contact-detail-link"] a',
+        subject: '[data-test-id="ticket-header-name-link"] a'
+      },
+      getTicketId: () => {
+        const match = window.location.href.match(/\/ticket\/(\d+)/);
+        return match?.[1] || '';
+      },
+      getContact: (el) => getVisibleText(el),
+      getSubject: (el) => getVisibleText(el)
+    }
+  };
+
+  const systemKey = detectSystem(currentUrl);
+  if (!systemKey) return 'Error: Unknown ticketing system';
+
+  const system = SYSTEMS[systemKey];
+  const ticketId = system.getTicketId();
+
+  const contactEl = await waitForSelector(system.selectors.contact);
+  const subjectEl = await waitForSelector(system.selectors.subject);
+
+  const contact = system.getContact(contactEl);
+  const subject = system.getSubject(subjectEl);
+
+  return `${system.name}: ${ticketId} - ${contact} - ${subject}`;
+}
+
+const SUPPORTED_DOMAINS = ['pureservice.com', 'hubspot.com'];
+
+function getSystemLabel(url) {
+  if (url.includes('pureservice.com')) return 'Pureservice Extractor';
+  if (url.includes('hubspot.com')) return 'HubSpot Extractor';
+  return 'Ticket Extractor';
+}
+
 document.getElementById('extractBtn').addEventListener('click', async () => {
   const button = document.getElementById('extractBtn');
   const statusDiv = document.getElementById('status');
@@ -6,27 +120,17 @@ document.getElementById('extractBtn').addEventListener('click', async () => {
 
   button.disabled = true;
   statusDiv.className = '';
-  statusDiv.style.display = 'none';
   previewDiv.className = '';
   previewDiv.textContent = '';
 
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 
-    // Check if we're on a supported system
-    const supportedDomains = ['pureservice.com', 'hubspot.com'];
-    const isSupported = supportedDomains.some(domain => tab.url.includes(domain));
-
-    if (!isSupported) {
+    if (!SUPPORTED_DOMAINS.some((d) => tab.url.includes(d))) {
       throw new Error('Please navigate to a supported ticketing system (Pureservice or HubSpot)');
     }
 
-    // Update title based on current system
-    if (tab.url.includes('pureservice.com')) {
-      titleEl.textContent = 'Pureservice Extractor';
-    } else if (tab.url.includes('hubspot.com')) {
-      titleEl.textContent = 'HubSpot Extractor';
-    }
+    titleEl.textContent = getSystemLabel(tab.url);
 
     const results = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
@@ -42,107 +146,22 @@ document.getElementById('extractBtn').addEventListener('click', async () => {
 
     await navigator.clipboard.writeText(extractedText);
 
-    statusDiv.textContent = '✓ Text copied to clipboard!';
+    statusDiv.textContent = '\u2713 Text copied to clipboard!';
     statusDiv.className = 'success';
     previewDiv.textContent = extractedText;
     previewDiv.className = 'visible';
 
     setTimeout(() => {
-      statusDiv.style.display = 'none';
+      statusDiv.className = '';
     }, 3000);
-
   } catch (error) {
-    statusDiv.textContent = `✗ Error: ${error.message}`;
+    statusDiv.textContent = `\u2717 Error: ${error.message}`;
     statusDiv.className = 'error';
   } finally {
     button.disabled = false;
   }
 });
 
-// Initialize popup with current system name
 chrome.tabs.query({ active: true, currentWindow: true }, ([tab]) => {
-  const titleEl = document.getElementById('systemTitle');
-  if (tab.url.includes('pureservice.com')) {
-    titleEl.textContent = 'Pureservice Extractor';
-  } else if (tab.url.includes('hubspot.com')) {
-    titleEl.textContent = 'HubSpot Extractor';
-  } else {
-    titleEl.textContent = 'Ticket Extractor';
-  }
+  document.getElementById('systemTitle').textContent = getSystemLabel(tab.url);
 });
-
-function extractTextFromPage(currentUrl) {
-  // This function runs in the context of the page
-  // We need to redefine the systems config here since we can't import modules in executeScript
-
-  const SYSTEMS = {
-    pureservice: {
-      name: 'Pureservice',
-      domain: 'mestergruppen.pureservice.com',
-      selectors: {
-        ticketId: '.request-number',
-        username: '.c-user-popover button',
-        subject: '.ember-text-field.subject.ember-view'
-      },
-      extractors: {
-        ticketId: (selector) => {
-          const el = document.querySelector(selector);
-          return el?.textContent?.trim() || '';
-        },
-        username: (el) => el?.textContent?.trim() || '',
-        subject: (el) => (el?.value || el?.textContent || '').trim()
-      }
-    },
-    hubspot: {
-      name: 'HubSpot',
-      domain: 'app-eu1.hubspot.com',
-      selectors: {
-        ticketId: null, // Not needed - we extract from URL
-        username: '[data-test-id="email-sender"] strong',
-        subject: '[data-test-id="highlight-property-display-subject"]'
-      },
-      extractors: {
-        ticketId: () => {
-          // Extract ticket ID from URL
-          // URL format: https://app-eu1.hubspot.com/contacts/6252589/record/0-5/377059183860/
-          const url = window.location.href;
-          const match = url.match(/\/record\/[^\/]+\/(\d+)/);
-          if (match && match[1]) {
-            return match[1];
-          }
-          return '';
-        },
-        username: (el) => el?.textContent?.trim() || '',
-        subject: (el) => el?.textContent?.trim() || ''
-      }
-    }
-  };
-
-  // Detect which system we're on
-  let systemConfig = null;
-  for (const [key, system] of Object.entries(SYSTEMS)) {
-    if (currentUrl.includes(system.domain)) {
-      systemConfig = system;
-      break;
-    }
-  }
-
-  if (!systemConfig) {
-    return 'Error: Unknown ticketing system';
-  }
-
-  const { name, selectors, extractors } = systemConfig;
-
-  // Extract ticket ID (may use selector or URL depending on system)
-  const ticketId = selectors.ticketId
-    ? extractors.ticketId(selectors.ticketId)
-    : extractors.ticketId();
-
-  const usernameEl = document.querySelector(selectors.username);
-  const subjectEl = document.querySelector(selectors.subject);
-
-  const username = extractors.username(usernameEl);
-  const subject = extractors.subject(subjectEl);
-
-  return `${name}: ${ticketId} - ${username} - ${subject}`;
-}

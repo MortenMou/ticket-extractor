@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Ticket Extractor",
-  "version": "2.0.0",
-  "description": "Extract ticket information from Pureservice, HubSpot, and other ticketing systems",
+  "version": "3.0.0",
+  "description": "Extract ticket information from Pureservice and HubSpot with one click",
   "permissions": [
     "activeTab",
     "scripting",
@@ -24,14 +24,5 @@
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
-  },
-  "content_scripts": [
-    {
-      "matches": [
-        "https://*.pureservice.com/*",
-        "https://*.hubspot.com/*"
-      ],
-      "js": ["systems-config.js", "content.js"]
-    }
-  ]
+  }
 }
