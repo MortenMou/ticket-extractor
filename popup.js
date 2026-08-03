@@ -101,7 +101,7 @@ async function extractTextFromPage(currentUrl) {
   const contact = system.getContact(contactEl);
   const subject = system.getSubject(subjectEl);
 
-  return `${system.name}: ${ticketId} - ${contact} - ${subject}`;
+  return `${system.name}: ${ticketId} - ${contact} - ${subject}\n\n${currentUrl}`;
 }
 
 const SUPPORTED_DOMAINS = ['pureservice.com', 'hubspot.com'];

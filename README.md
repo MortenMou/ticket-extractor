@@ -11,11 +11,19 @@ Chrome extension that extracts ticket information from support systems and copie
 
 ```
 [System]: [ticket-id] - [contact-name] - [subject]
+
+[ticket-url]
 ```
 
-Examples:
-- `Pureservice: 12345 - John Doe - Invoice request`
-- `HubSpot: 377059183 - Jane Smith - Product feed issue`
+Example:
+
+```
+HubSpot: 377059183 - Jane Smith - Product feed issue
+
+https://app-eu1.hubspot.com/contacts/6252589/record/0-5/377059183
+```
+
+The URL is the tab's address at the moment of extraction, so it works for Pureservice, HubSpot ticket records and HubSpot Helpdesk alike.
 
 ## Installation
 

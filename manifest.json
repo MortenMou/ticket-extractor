@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Ticket Extractor",
-  "version": "3.0.0",
+  "version": "3.1.0",
   "description": "Extract ticket information from Pureservice and HubSpot with one click",
   "permissions": [
     "activeTab",
